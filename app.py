@@ -156,33 +156,23 @@ async def send_single_like_request(encrypted_like_payload, token_dict, url):
         print(f"Exception in send_single_like_request for token {token_value[:10]}...: {e}")
         return 997
 
-async def send_likes_with_token_batch(uid, server_region, like_api_url, token_batch):
-
-    if not token_batch:
-        print("No tokens provided.")
+async def send_likes_with_token_batch(uid, server_region_for_like_proto, like_api_url, token_batch_to_use):
+    if not token_batch_to_use:
+        print("No tokens provided in the batch to send_likes_with_token_batch.")
         return []
 
-    like_payload = create_protobuf_message(uid, server_region)
-    encrypted_payload = encrypt_message(like_payload)
-
+    like_protobuf_payload = create_protobuf_message(uid, server_region_for_like_proto)
+    encrypted_like_payload = encrypt_message(like_protobuf_payload)
+    
     tasks = []
-
-    for token_data in token_batch:
-        tasks.append(
-            send_single_like_request(
-                encrypted_payload,
-                token_data,
-                like_api_url
-            )
-        )
-
+    for token_dict_for_request in token_batch_to_use:
+        tasks.append(send_single_like_request(encrypted_like_payload, token_dict_for_request, like_api_url))
+    
     results = await asyncio.gather(*tasks, return_exceptions=True)
-
-    success = sum(1 for r in results if isinstance(r, int) and r == 200)
-    fail = len(token_batch) - success
-
-    print(f"Likes sent: {success} | Failed: {fail}")
-
+    
+    successful_sends = sum(1 for r in results if isinstance(r, int) and r == 200)
+    failed_sends = len(token_batch_to_use) - successful_sends
+    print(f"Attempted {len(token_batch_to_use)} like sends from batch. Successful: {successful_sends}, Failed/Error: {failed_sends}")
     return results
 
 def make_profile_check_request(encrypted_profile_payload, server_name, token_dict):
@@ -237,7 +227,6 @@ app = Flask(__name__)
 
 @app.route('/like', methods=['GET'])
 def handle_requests():
-
     uid_param = request.args.get("uid")
     server_name_param = request.args.get("server_name", "").upper()
     use_random = request.args.get("random", "false").lower() == "true"
@@ -245,36 +234,43 @@ def handle_requests():
     if not uid_param or not server_name_param:
         return jsonify({"error": "UID and server_name are required"}), 400
 
-    # Load tokens
+    # Load visit token for profile checking
     visit_tokens = load_tokens(server_name_param, for_visit=True)
-    visit_token = visit_tokens[0]
-
+    if not visit_tokens:
+        return jsonify({"error": f"No visit tokens loaded for server {server_name_param}."}), 500
+    
+    # Use the first visit token for profile check
+    visit_token = visit_tokens[0] if visit_tokens else None
+    
+    # Load regular tokens for like sending
     all_available_tokens = load_tokens(server_name_param, for_visit=False)
+    if not all_available_tokens:
+        return jsonify({"error": f"No tokens loaded or token file invalid for server {server_name_param}."}), 500
 
-    # Get batch tokens
+    print(f"Total tokens available for {server_name_param}: {len(all_available_tokens)}")
+
+    # Get the batch of tokens for like sending
     if use_random:
         tokens_for_like_sending = get_random_batch_tokens(server_name_param, all_available_tokens)
+        print(f"Using RANDOM batch selection for {server_name_param}")
     else:
         tokens_for_like_sending = get_next_batch_tokens(server_name_param, all_available_tokens)
-
+        print(f"Using ROTATING batch selection for {server_name_param}")
+    
     encrypted_player_uid_for_profile = enc_profile_check_payload(uid_param)
-
-    # ---------------- BEFORE LIKE ----------------
+    
+    # Get likes BEFORE using visit token
+    before_info = make_profile_check_request(encrypted_player_uid_for_profile, server_name_param, visit_token)
     before_like_count = 0
-
-    before_info = make_profile_check_request(
-        encrypted_player_uid_for_profile,
-        server_name_param,
-        visit_token
-    )
-
+    
     if before_info and hasattr(before_info, 'AccountInfo'):
-        try:
-            before_like_count = int(before_info.AccountInfo.Likes)
-        except:
-            before_like_count = int(getattr(before_info.AccountInfo, "Likes", 0))
+        before_like_count = int(before_info.AccountInfo.Likes)
+    else:
+        print(f"Could not reliably fetch 'before' profile info for UID {uid_param} on {server_name_param}.")
 
-    # ---------------- SEND LIKES ----------------
+    print(f"UID {uid_param} ({server_name_param}): Likes before = {before_like_count}")
+
+    # Determine the URL for sending likes
     if server_name_param == "IND":
         like_api_url = "https://client.ind.freefiremobile.com/LikeProfile"
     elif server_name_param in {"BR", "US", "SAC", "NA"}:
@@ -282,79 +278,77 @@ def handle_requests():
     else:
         like_api_url = "https://clientbp.ggblueshark.com/LikeProfile"
 
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    loop.run_until_complete(
-        send_likes_with_token_batch(
-            uid_param,
-            server_name_param,
-            like_api_url,
-            tokens_for_like_sending
-        )
-    )
-
-    # ---------------- AFTER LIKE ----------------
-    after_like_count = before_like_count
-    actual_player_uid_from_profile = int(uid_param)
-    player_nickname_from_profile = "N/A"
-    player_level_from_profile = 0
-
-    after_info = make_profile_check_request(
-        encrypted_player_uid_for_profile,
-        server_name_param,
-        visit_token
-    )
-
-    if after_info and hasattr(after_info, 'AccountInfo'):
+    if tokens_for_like_sending:
+        print(f"Using token batch for {server_name_param} (size {len(tokens_for_like_sending)}) to send likes.")
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         try:
-            after_like_count = int(after_info.AccountInfo.Likes)
-            actual_player_uid_from_profile = int(after_info.AccountInfo.UID)
+            loop.run_until_complete(send_likes_with_token_batch(uid_param, server_name_param, like_api_url, tokens_for_like_sending))
+        finally:
+            loop.close()
+    else:
+        print(f"Skipping like sending for UID {uid_param} as no tokens available for like sending.")
+        
+# Get likes AFTER using visit token
+after_info = make_profile_check_request(encrypted_player_uid_for_profile, server_name_param, visit_token)
 
-            if hasattr(after_info.AccountInfo, 'PlayerNickname'):
-                player_nickname_from_profile = str(after_info.AccountInfo.PlayerNickname)
+after_like_count = before_like_count
+actual_player_uid_from_profile = int(uid_param)
+player_nickname_from_profile = "N/A"
+player_level_from_profile = 0
 
-            if hasattr(after_info.AccountInfo, 'AccountLevel'):
-                player_level_from_profile = int(after_info.AccountInfo.AccountLevel)
+if after_info and hasattr(after_info, 'AccountInfo'):
+    try:
+        after_like_count = int(after_info.AccountInfo.Likes)
+        actual_player_uid_from_profile = int(after_info.AccountInfo.UID)
 
-        except:
-            after_like_count = int(getattr(after_info.AccountInfo, "Likes", before_like_count))
-            actual_player_uid_from_profile = int(getattr(after_info.AccountInfo, "UID", uid_param))
-            player_nickname_from_profile = str(getattr(after_info.AccountInfo, "PlayerNickname", "N/A"))
-            player_level_from_profile = int(getattr(after_info.AccountInfo, "AccountLevel", 0))
+        if hasattr(after_info.AccountInfo, 'PlayerNickname'):
+            player_nickname_from_profile = str(after_info.AccountInfo.PlayerNickname)
 
-    # ---------------- RESULT ----------------
+if hasattr(after_info.AccountInfo, 'AccountLevel'):
+    player_level_from_profile = int(after_info.AccountInfo.AccountLevel)
+elif hasattr(after_info.AccountInfo, 'Level'):
+    player_level_from_profile = int(after_info.AccountInfo.Level)
+
+    except AttributeError:
+        after_like_count = int(after_info.AccountInfo.get('Likes', 0))
+        actual_player_uid_from_profile = int(after_info.AccountInfo.get('UID', 0))
+        player_nickname_from_profile = str(after_info.AccountInfo.get('PlayerNickname', 'N/A'))
+        player_level_from_profile = int(after_info.AccountInfo.get('AccountLevel', 0))
+    else:
+        print(f"Could not reliably fetch 'after' profile info for UID {uid_param} on {server_name_param}.")
+
+    print(f"UID {uid_param} ({server_name_param}): Likes after = {after_like_count}")
+
     likes_increment = after_like_count - before_like_count
     request_status = 1 if likes_increment > 0 else (2 if likes_increment == 0 else 3)
 
     response_data = {
-        "LikesGivenByAPI": likes_increment,
-        "LikesafterCommand": after_like_count,
-        "LikesbeforeCommand": before_like_count,
-        "PlayerNickname": player_nickname_from_profile,
-        "AccountLevel": player_level_from_profile,
-        "UID": actual_player_uid_from_profile,
-        "status": request_status,
-        "Note": f"Used visit token and batch of {len(tokens_for_like_sending)} tokens."
-    }
-
-    return jsonify(response_data)
+    "LikesGivenByAPI": likes_increment,
+    "LikesafterCommand": after_like_count,
+    "LikesbeforeCommand": before_like_count,
+    "PlayerNickname": player_nickname_from_profile,
+    "AccountLevel": player_level_from_profile,
+    "UID": actual_player_uid_from_profile,
+    "status": request_status,
+    "Note": f"Used visit token and batch of {len(tokens_for_like_sending)} tokens."
+}
 
 @app.route('/token_info', methods=['GET'])
 def token_info():
+    """Endpoint to check token counts for each server"""
     servers = ["IND", "BD", "BR", "US", "SAC", "NA"]
     info = {}
-
+    
     for server in servers:
         regular_tokens = load_tokens(server, for_visit=False)
         visit_tokens = load_tokens(server, for_visit=True)
-
         info[server] = {
             "regular_tokens": len(regular_tokens),
             "visit_tokens": len(visit_tokens)
         }
-
+    
     return jsonify(info)
 
-if __name__ == "__main__":
-    app.run()
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5001, debug=True, use_reloader=False)

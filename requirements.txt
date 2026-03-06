@@ -1,7 +1,8 @@
-flask
+Flask[async]
 requests
 aiohttp
+googleapis-common-protos
 pycryptodome
 protobuf
-urllib3
-googleapis-common-protos
+Werkzeug
+firebase-admin
