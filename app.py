@@ -311,7 +311,9 @@ def handle_requests():
             after_like_count = int(after_info.AccountInfo.get('Likes', 0))
             actual_player_uid_from_profile = int(after_info.AccountInfo.get('UID', 0))
             player_nickname_from_profile = str(after_info.AccountInfo.get('PlayerNickname', 'N/A'))
+player_level = int(after_info.AccountInfo.get('Level', 0))
     else:
+    player_level = 0
         print(f"Could not reliably fetch 'after' profile info for UID {uid_param} on {server_name_param}.")
 
     print(f"UID {uid_param} ({server_name_param}): Likes after = {after_like_count}")
@@ -348,6 +350,4 @@ def token_info():
     return jsonify(info)
 
 if __name__ == '__main__':
-    app.run()
-
-handler = app
+    app.run(host='0.0.0.0', port=5001, debug=True, use_reloader=False)
