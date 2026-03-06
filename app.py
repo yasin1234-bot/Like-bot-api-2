@@ -356,4 +356,5 @@ def token_info():
 
     return jsonify(info)
 
-app = app
+if __name__ == "__main__":
+    app.run()
