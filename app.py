@@ -316,19 +316,21 @@ def handle_requests():
 
     print(f"UID {uid_param} ({server_name_param}): Likes after = {after_like_count}")
 
-    likes_increment = after_like_count - before_like_count
-    request_status = 1 if likes_increment > 0 else (2 if likes_increment == 0 else 3)
+player_level = 0
+if player_profile_data and isinstance(player_profile_data, dict):
+    player_level = player_profile_data.get("level", 0)
 
-    response_data = {
-        "LikesGivenByAPI": likes_increment,
-        "LikesafterCommand": after_like_count,
-        "LikesbeforeCommand": before_like_count,
-        "PlayerNickname": player_nickname_from_profile,
-        "Level": player_level,
-        "UID": actual_player_uid_from_profile,
-        "status": request_status,
-        "Note": f"Used visit token for profile check and {'random' if use_random else 'rotating'} batch of {len(tokens_for_like_sending)} tokens for like sending."
-    }
+response_data = {
+    "LikesGivenByAPI": likes_increment,
+    "LikesafterCommand": after_like_count,
+    "LikesbeforeCommand": before_like_count,
+    "PlayerNickname": player_nickname_from_profile,
+    "Level": player_level,
+    "UID": actual_player_uid_from_profile,
+    "status": request_status,
+    "Note": f"Used visit token for profile check and {'random' if use_random else 'rotating'} batch of {len(tokens_for_like_sending)} tokens for like sending."
+}
+
 return jsonify(response_data)
 
 @app.route('/token_info', methods=['GET'])
@@ -347,5 +349,4 @@ def token_info():
     
     return jsonify(info)
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5001, debug=True, use_reloader=False)
+handler = app
