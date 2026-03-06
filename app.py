@@ -305,10 +305,8 @@ if after_info and hasattr(after_info, 'AccountInfo'):
         if hasattr(after_info.AccountInfo, 'PlayerNickname'):
             player_nickname_from_profile = str(after_info.AccountInfo.PlayerNickname)
 
-if hasattr(after_info.AccountInfo, 'AccountLevel'):
-    player_level_from_profile = int(after_info.AccountInfo.AccountLevel)
-elif hasattr(after_info.AccountInfo, 'Level'):
-    player_level_from_profile = int(after_info.AccountInfo.Level)
+        if hasattr(after_info.AccountInfo, 'AccountLevel'):
+            player_level_from_profile = int(after_info.AccountInfo.AccountLevel)
 
     except AttributeError:
         after_like_count = int(after_info.AccountInfo.get('Likes', 0))
@@ -331,7 +329,7 @@ elif hasattr(after_info.AccountInfo, 'Level'):
     "AccountLevel": player_level_from_profile,
     "UID": actual_player_uid_from_profile,
     "status": request_status,
-    "Note": f"Used visit token and batch of {len(tokens_for_like_sending)} tokens."
+    "Note": f"Used visit token for profile check and {'random' if use_random else 'rotating'} batch of {len(tokens_for_like_sending)} tokens for like sending."
 }
 
 @app.route('/token_info', methods=['GET'])
