@@ -318,3 +318,5 @@ def token_info():
         }
 
     return jsonify(info)
+
+app = app
