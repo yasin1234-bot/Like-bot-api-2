@@ -289,37 +289,48 @@ def handle_requests():
     else:
         print(f"Skipping like sending for UID {uid_param} as no tokens available for like sending.")
         
-    # Get likes AFTER using visit token
-    after_info = make_profile_check_request(encrypted_player_uid_for_profile, server_name_param, visit_token)
-    after_like_count = before_like_count
-    actual_player_uid_from_profile = int(uid_param)
-    player_nickname_from_profile = "N/A"
+# Get likes AFTER using visit token
+after_info = make_profile_check_request(encrypted_player_uid_for_profile, server_name_param, visit_token)
 
-    if after_info and hasattr(after_info, 'AccountInfo'):
+after_like_count = before_like_count
+actual_player_uid_from_profile = int(uid_param)
+player_nickname_from_profile = "N/A"
+player_level_from_profile = 0
+
+if after_info and hasattr(after_info, 'AccountInfo'):
+    try:
         after_like_count = int(after_info.AccountInfo.Likes)
         actual_player_uid_from_profile = int(after_info.AccountInfo.UID)
-        if after_info.AccountInfo.PlayerNickname:
+
+        if hasattr(after_info.AccountInfo, 'PlayerNickname'):
             player_nickname_from_profile = str(after_info.AccountInfo.PlayerNickname)
-        else:
-            player_nickname_from_profile = "N/A"
-    else:
-        print(f"Could not reliably fetch 'after' profile info for UID {uid_param} on {server_name_param}.")
 
-    print(f"UID {uid_param} ({server_name_param}): Likes after = {after_like_count}")
+        if hasattr(after_info.AccountInfo, 'AccountLevel'):
+            player_level_from_profile = int(after_info.AccountInfo.AccountLevel)
 
-    likes_increment = after_like_count - before_like_count
-    request_status = 1 if likes_increment > 0 else (2 if likes_increment == 0 else 3)
+    except AttributeError:
+        after_like_count = int(after_info.AccountInfo.get('Likes', 0))
+        actual_player_uid_from_profile = int(after_info.AccountInfo.get('UID', 0))
+        player_nickname_from_profile = str(after_info.AccountInfo.get('PlayerNickname', 'N/A'))
+        player_level_from_profile = int(after_info.AccountInfo.get('AccountLevel', 0))
 
-    response_data = {
-        "LikesGivenByAPI": likes_increment,
-        "LikesafterCommand": after_like_count,
-        "LikesbeforeCommand": before_like_count,
-        "PlayerNickname": player_nickname_from_profile,
-        "UID": actual_player_uid_from_profile,
-        "status": request_status,
-        "Note": f"Used visit token for profile check and {'random' if use_random else 'rotating'} batch of {len(tokens_for_like_sending)} tokens for like sending."
-    }
-    return jsonify(response_data)
+print(f"UID {uid_param} ({server_name_param}): Likes after = {after_like_count}")
+
+likes_increment = after_like_count - before_like_count
+request_status = 1 if likes_increment > 0 else (2 if likes_increment == 0 else 3)
+
+response_data = {
+    "LikesGivenByAPI": likes_increment,
+    "LikesafterCommand": after_like_count,
+    "LikesbeforeCommand": before_like_count,
+    "PlayerNickname": player_nickname_from_profile,
+    "AccountLevel": player_level_from_profile,
+    "UID": actual_player_uid_from_profile,
+    "status": request_status,
+    "Note": f"Used visit token for profile check and {'random' if use_random else 'rotating'} batch of {len(tokens_for_like_sending)} tokens for like sending."
+}
+
+return jsonify(response_data)
 
 @app.route('/token_info', methods=['GET'])
 def token_info():
