@@ -316,12 +316,8 @@ def handle_requests():
 
     print(f"UID {uid_param} ({server_name_param}): Likes after = {after_like_count}")
 
-likes_increment = after_like_count - before_like_count
-
-# ===== LEVEL OPTION =====
-player_level = profile_data["level"] if "level" in profile_data else 0
-
-request_status = 1 if likes_increment > 0 else (2 if likes_increment == 0 else 3)
+    likes_increment = after_like_count - before_like_count
+    request_status = 1 if likes_increment > 0 else (2 if likes_increment == 0 else 3)
 
     response_data = {
         "LikesGivenByAPI": likes_increment,
