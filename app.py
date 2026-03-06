@@ -259,36 +259,6 @@ def handle_requests():
     
     encrypted_player_uid_for_profile = enc_profile_check_payload(uid_param)
     
-    # Get likes BEFORE using visit token
-    before_info = make_profile_check_request(encrypted_player_uid_for_profile, server_name_param, visit_token)
-    before_like_count = 0
-    
-    if before_info and hasattr(before_info, 'AccountInfo'):
-        before_like_count = int(before_info.AccountInfo.Likes)
-    else:
-        print(f"Could not reliably fetch 'before' profile info for UID {uid_param} on {server_name_param}.")
-
-    print(f"UID {uid_param} ({server_name_param}): Likes before = {before_like_count}")
-
-    # Determine the URL for sending likes
-    if server_name_param == "IND":
-        like_api_url = "https://client.ind.freefiremobile.com/LikeProfile"
-    elif server_name_param in {"BR", "US", "SAC", "NA"}:
-        like_api_url = "https://client.us.freefiremobile.com/LikeProfile"
-    else:
-        like_api_url = "https://clientbp.ggblueshark.com/LikeProfile"
-
-    if tokens_for_like_sending:
-        print(f"Using token batch for {server_name_param} (size {len(tokens_for_like_sending)}) to send likes.")
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(send_likes_with_token_batch(uid_param, server_name_param, like_api_url, tokens_for_like_sending))
-        finally:
-            loop.close()
-    else:
-        print(f"Skipping like sending for UID {uid_param} as no tokens available for like sending.")
-        
 # Get likes AFTER using visit token
 after_info = make_profile_check_request(encrypted_player_uid_for_profile, server_name_param, visit_token)
 
@@ -309,10 +279,10 @@ if after_info and hasattr(after_info, 'AccountInfo'):
             player_level_from_profile = int(after_info.AccountInfo.AccountLevel)
 
     except AttributeError:
-        after_like_count = int(after_info.AccountInfo.get('Likes', 0))
-        actual_player_uid_from_profile = int(after_info.AccountInfo.get('UID', 0))
-        player_nickname_from_profile = str(after_info.AccountInfo.get('PlayerNickname', 'N/A'))
-        player_level_from_profile = int(after_info.AccountInfo.get('AccountLevel', 0))
+        after_like_count = int(getattr(after_info.AccountInfo, "Likes", 0))
+        actual_player_uid_from_profile = int(getattr(after_info.AccountInfo, "UID", uid_param))
+        player_nickname_from_profile = str(getattr(after_info.AccountInfo, "PlayerNickname", "N/A"))
+        player_level_from_profile = int(getattr(after_info.AccountInfo, "AccountLevel", 0))
 
 print(f"UID {uid_param} ({server_name_param}): Likes after = {after_like_count}")
 
@@ -332,12 +302,13 @@ response_data = {
 
 return jsonify(response_data)
 
+
 @app.route('/token_info', methods=['GET'])
 def token_info():
     """Endpoint to check token counts for each server"""
     servers = ["IND", "BD", "BR", "US", "SAC", "NA"]
     info = {}
-    
+
     for server in servers:
         regular_tokens = load_tokens(server, for_visit=False)
         visit_tokens = load_tokens(server, for_visit=True)
@@ -345,7 +316,7 @@ def token_info():
             "regular_tokens": len(regular_tokens),
             "visit_tokens": len(visit_tokens)
         }
-    
+
     return jsonify(info)
 
 if __name__ == '__main__':
